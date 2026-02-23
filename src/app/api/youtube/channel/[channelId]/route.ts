@@ -1,66 +1,49 @@
+// app/api/youtube/channel/[channelId]/route.ts
+import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
-import { NextResponse } from 'next/server'
+
+const YT_KEY = process.env.YOUTUBE_API_KEY
 
 export async function GET(
-  request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ channelId: string }> }
 ) {
+  const supabase = await createClient()
+  const { data: { user }, error } = await supabase.auth.getUser()
+  if (error || !user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  if (!YT_KEY) {
+    return NextResponse.json({ error: 'YouTube API key not configured' }, { status: 500 })
+  }
+
+  const { channelId } = await params
+
   try {
-    const { channelId } = await params
-    const supabase = await createClient()
+    const url = new URL('https://www.googleapis.com/youtube/v3/channels')
+    url.searchParams.set('part', 'snippet,statistics,brandingSettings,contentDetails')
+    url.searchParams.set('id', channelId)
+    url.searchParams.set('key', YT_KEY)
 
-    // Authenticate user
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-    if (userError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    // Get token from session
-    const { data: sessionData } = await supabase.auth.getSession()
-    let accessToken = sessionData.session?.provider_token
-
-    // Fallback to stored token in profiles
-    if (!accessToken) {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('youtube_access_token')
-        .eq('id', user.id)
-        .single()
-      accessToken = profile?.youtube_access_token
-    }
-
-    if (!accessToken) {
-      return NextResponse.json({ error: 'No YouTube access token' }, { status: 401 })
-    }
-
-    // Fetch channel data from YouTube API
-    const res = await fetch(
-      `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics,brandingSettings&id=${channelId}`,
-      { headers: { Authorization: `Bearer ${accessToken}` } }
-    )
+    const res = await fetch(url.toString(), { next: { revalidate: 600 } })
 
     if (!res.ok) {
-      const errorData = await res.json()
-      console.error('YouTube API error:', errorData)
-      return NextResponse.json(
-        { error: 'YouTube API error', details: errorData },
-        { status: res.status }
-      )
+      const err = await res.json()
+      console.error('YouTube API error:', err)
+      return NextResponse.json({ error: err.error?.message || 'YouTube API error' }, { status: res.status })
     }
 
     const data = await res.json()
-    const channel = data.items?.[0] || null
+    const channel = data.items?.[0]
 
     if (!channel) {
       return NextResponse.json({ error: 'Channel not found' }, { status: 404 })
     }
 
     return NextResponse.json(channel)
-  } catch (error) {
-    console.error('Channel API error:', error)
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    )
+  } catch (err: any) {
+    console.error('Channel fetch error:', err)
+    return NextResponse.json({ error: err.message || 'Internal error' }, { status: 500 })
   }
 }

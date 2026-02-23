@@ -13,7 +13,7 @@ export default function RefreshButton() {
       const res = await fetch('/api/youtube/subscriptions')
       const data = await res.json()
       if (res.ok) {
-        router.refresh() // Refresh the page to show updated data
+        router.refresh()
       } else {
         alert(`Error: ${data.error}`)
       }
@@ -28,18 +28,39 @@ export default function RefreshButton() {
     <button
       onClick={syncSubscriptions}
       disabled={loading}
-      className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+      style={{
+        background: loading ? 'rgba(6,182,212,0.1)' : 'rgba(6,182,212,0.12)',
+        border: '1px solid rgba(6,182,212,0.3)',
+        borderRadius: 14,
+        padding: '8px 16px',
+        color: '#06b6d4',
+        fontSize: 12,
+        fontWeight: 700,
+        fontFamily: "'Syne', sans-serif",
+        cursor: loading ? 'not-allowed' : 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        opacity: loading ? 0.6 : 1,
+        transition: 'all 0.2s',
+        flexShrink: 0,
+      }}
     >
       {loading ? (
         <>
-          <svg className="h-4 w-4 animate-spin text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-          </svg>
-          <span>Syncing...</span>
+          <span style={{
+            width: 13, height: 13,
+            border: '2px solid rgba(6,182,212,0.3)',
+            borderTopColor: '#06b6d4',
+            borderRadius: '50%',
+            display: 'inline-block',
+            animation: 'spin 0.7s linear infinite',
+          }} />
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+          Syncing…
         </>
       ) : (
-        'Sync Now'
+        <>↻ Sync</>
       )}
     </button>
   )

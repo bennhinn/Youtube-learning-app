@@ -1,38 +1,44 @@
+// app/api/youtube/channel/[channelId]/playlists/route.ts
+import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
-import { NextResponse } from 'next/server'
+
+const YT_KEY = process.env.YOUTUBE_API_KEY
 
 export async function GET(
-  request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ channelId: string }> }
 ) {
-  const { channelId } = await params
-  const url = new URL(request.url)
-  const pageToken = url.searchParams.get('pageToken') || ''
-
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const { data: { user }, error } = await supabase.auth.getUser()
+  if (error || !user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
 
-  const { data: sessionData } = await supabase.auth.getSession()
-  const accessToken = sessionData.session?.provider_token
-  if (!accessToken) return NextResponse.json({ error: 'No access token' }, { status: 401 })
+  if (!YT_KEY) {
+    return NextResponse.json({ error: 'YouTube API key not configured' }, { status: 500 })
+  }
+
+  const { channelId } = await params
 
   try {
-    const searchParams = new URLSearchParams({
-      part: 'snippet,contentDetails',
-      channelId,
-      maxResults: '20',
-    })
-    if (pageToken) searchParams.set('pageToken', pageToken)
+    const url = new URL('https://www.googleapis.com/youtube/v3/playlists')
+    url.searchParams.set('part', 'snippet,contentDetails')
+    url.searchParams.set('channelId', channelId)
+    url.searchParams.set('maxResults', '20')
+    url.searchParams.set('key', YT_KEY)
 
-    const res = await fetch(
-      `https://www.googleapis.com/youtube/v3/playlists?${searchParams}`,
-      { headers: { Authorization: `Bearer ${accessToken}` } }
-    )
-    if (!res.ok) throw new Error('YouTube API error')
+    const res = await fetch(url.toString(), { next: { revalidate: 600 } })
+
+    if (!res.ok) {
+      const err = await res.json()
+      console.error('YouTube playlists error:', err)
+      return NextResponse.json({ error: err.error?.message || 'YouTube API error' }, { status: res.status })
+    }
+
     const data = await res.json()
     return NextResponse.json(data)
-  } catch (error) {
-    return NextResponse.json({ error: 'Failed to fetch playlists' }, { status: 500 })
+  } catch (err: any) {
+    console.error('Playlists fetch error:', err)
+    return NextResponse.json({ error: err.message || 'Internal error' }, { status: 500 })
   }
 }
