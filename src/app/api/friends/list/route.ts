@@ -8,11 +8,10 @@ export async function GET() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // Get all friendships involving current user
+  // Get all friendships involving current user (no 'id' column)
   const { data: friendships, error: fError } = await supabase
     .from('friendships')
     .select(`
-      id,
       status,
       created_at,
       user_id,
@@ -31,14 +30,14 @@ export async function GET() {
   const pendingReceived = []
 
   for (const f of friendships) {
-    // The joined fields might be arrays (if multiple), but should be single objects
+    // The joined fields might be arrays, but should be single objects
     const userProfile = Array.isArray(f.user) ? f.user[0] : f.user
     const friendProfile = Array.isArray(f.friend) ? f.friend[0] : f.friend
 
     // Determine the "other" user (the friend)
     const other = f.user_id === user.id ? friendProfile : userProfile
     const record = {
-      id: other.id,
+      id: other.id,                       // this is the friend's user id, not friendship id
       display_name: other.display_name,
       email: other.email,
       avatar_url: other.avatar_url,
