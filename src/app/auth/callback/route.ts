@@ -20,6 +20,7 @@ export async function GET(request: Request) {
         .from('profiles')
         .upsert({
           id: data.session.user.id,
+          email: data.session.user.email,  
           youtube_access_token: data.session.provider_token,
           youtube_refresh_token: data.session.provider_refresh_token ?? null,
           youtube_token_updated_at: new Date().toISOString(),
