@@ -21,11 +21,10 @@ export default function ChannelCard({ channel, color }: ChannelCardProps) {
   }
 
   return (
-    <div style={{ position: 'relative' }}>
+    <div style={{ position: 'relative', minWidth: 0, width: '100%', overflow: 'hidden' }}>
       {/* External link button */}
       <button
         onClick={handleExternalClick}
-        className="external-link-icon"
         style={{
           position: 'absolute',
           top: 12,
@@ -49,7 +48,7 @@ export default function ChannelCard({ channel, color }: ChannelCardProps) {
       </button>
 
       {/* Internal link to channel page */}
-      <Link href={`/channels/${channel.youtube_channel_id}`} style={{ textDecoration: 'none' }}>
+      <Link href={`/channels/${channel.youtube_channel_id}`} style={{ textDecoration: 'none', display: 'block', width: '100%' }}>
         <div
           className="channel-card card-glass"
           style={{
@@ -60,8 +59,9 @@ export default function ChannelCard({ channel, color }: ChannelCardProps) {
             gap: 10,
             position: 'relative',
             overflow: 'hidden',
-            width: '100%',          // ensures it fills the grid cell
-            minWidth: 0,             // allows shrinking below content size
+            width: '100%',
+            minWidth: 0,
+            boxSizing: 'border-box',
           }}
         >
           {/* Subtle colored top glow */}
@@ -74,7 +74,7 @@ export default function ChannelCard({ channel, color }: ChannelCardProps) {
 
           {/* Avatar */}
           {channel.thumbnail_url ? (
-            <div style={{ width: 60, height: 60, borderRadius: '50%', border: `2px solid ${color}50`, overflow: 'hidden', boxShadow: `0 0 16px ${color}30` }}>
+            <div style={{ width: 60, height: 60, borderRadius: '50%', border: `2px solid ${color}50`, overflow: 'hidden', boxShadow: `0 0 16px ${color}30`, flexShrink: 0 }}>
               <img
                 src={channel.thumbnail_url}
                 alt={channel.title}
@@ -89,6 +89,7 @@ export default function ChannelCard({ channel, color }: ChannelCardProps) {
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontSize: 22, fontWeight: 800, color,
               boxShadow: `0 0 16px ${color}30`,
+              flexShrink: 0,
             }}>
               {channel.title.charAt(0).toUpperCase()}
             </div>
@@ -105,7 +106,7 @@ export default function ChannelCard({ channel, color }: ChannelCardProps) {
             WebkitLineClamp: 2,
             WebkitBoxOrient: 'vertical',
             width: '100%',
-            overflowWrap: 'break-word',   // handles long words
+            wordBreak: 'break-word',
           }}>
             {channel.title}
           </p>
@@ -122,7 +123,7 @@ export default function ChannelCard({ channel, color }: ChannelCardProps) {
               WebkitLineClamp: 2,
               WebkitBoxOrient: 'vertical',
               width: '100%',
-              overflowWrap: 'break-word',
+              wordBreak: 'break-word',
             }}>
               {channel.description}
             </p>
