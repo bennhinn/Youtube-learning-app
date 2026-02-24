@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/utils/supabase/client'
 import { ArrowLeft, ChevronUp, ChevronDown, Trash2, Play, Eye, Clock, BookOpen, Tag, Calendar, Sparkles } from 'lucide-react'
@@ -20,7 +20,7 @@ interface Video {
 
 export default function PreviewPage() {
     const router = useRouter()
-    const searchParams = useSearchParams()
+
     const supabase = createClient()
 
     const [videos, setVideos] = useState<Video[]>([])
