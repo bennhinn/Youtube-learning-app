@@ -185,70 +185,84 @@ export default function VideoList({ goalId, initialItems }: VideoListProps) {
 
   // ── Mark as watched (original logic untouched) ────────────────────────────
   const markAsWatched = async (videoId: string, position: number) => {
-    setLoading(true)
-    try {
-      const { error: updateError } = await supabase
-        .from('learning_paths')
-        .update({ status: 'watched' })
-        .eq('goal_id', goalId)
-        .eq('video_id', videoId)
+  setLoading(true)
+  try {
+    const { error: updateError } = await supabase
+      .from('learning_paths')
+      .update({ status: 'watched' })
+      .eq('goal_id', goalId)
+      .eq('video_id', videoId)
 
-      if (updateError) throw updateError
+    if (updateError) throw updateError
 
-      const { error: progressError } = await supabase
-        .from('progress')
-        .insert({
-          user_id: (await supabase.auth.getUser()).data.user?.id,
-          video_id: videoId,
-          watched_at: new Date().toISOString(),
-        })
+    const { error: progressError } = await supabase
+      .from('progress')
+      .insert({
+        user_id: (await supabase.auth.getUser()).data.user?.id,
+        video_id: videoId,
+        watched_at: new Date().toISOString(),
+      })
 
-      if (progressError) console.warn('Progress insert warning:', progressError)
+    if (progressError) console.warn('Progress insert warning:', progressError)
 
-      setItems(prev =>
-        prev.map(item =>
-          item.video.youtube_video_id === videoId
-            ? { ...item, status: 'watched' }
-            : item
-        )
+    setItems(prev => {
+      const updated = prev.map(item =>
+        item.video.youtube_video_id === videoId
+          ? { ...item, status: 'watched' }
+          : item
       )
 
-      // Track session
-      const newSession = [...sessionWatched, videoId]
-      setSessionWatched(newSession)
+      // --- NEW: Update goal progress in the database ---
+      const watchedCount = updated.filter(i => i.status === 'watched').length
+      const totalVideos = updated.length
+      const newProgress = totalVideos > 0 ? Math.round((watchedCount / totalVideos) * 100) : 0
 
-      // Show session recap if 3+ watched this session
-      if (newSession.length >= 3 && newSession.length % 3 === 0) {
-        setShowRecap(true)
-      }
+      supabase
+        .from('goals')
+        .update({ progress_percent: newProgress })
+        .eq('id', goalId)
+        .then(({ error }) => {
+          if (error) console.error('Failed to update goal progress:', error)
+        })
+      // ------------------------------------------------
 
-      // Auto-advance: find next video
-      const next = getNextVideo(videoId)
-      if (next) {
-        setUpNextVideo(next)
-        setCountdown(5)
-        setShowUpNext(true)
-        countdownRef.current = setInterval(() => {
-          setCountdown(c => {
-            if (c <= 1) {
-              clearInterval(countdownRef.current!)
-              setShowUpNext(false)
-              setSelectedVideo(next)
-              return 5
-            }
-            return c - 1
-          })
-        }, 1000)
-      }
+      return updated
+    })
 
-      router.refresh()
-    } catch (error) {
-      console.error('Error marking as watched:', error)
-      alert('Failed to update status')
-    } finally {
-      setLoading(false)
+    // Track session
+    const newSession = [...sessionWatched, videoId]
+    setSessionWatched(newSession)
+
+    if (newSession.length >= 3 && newSession.length % 3 === 0) {
+      setShowRecap(true)
     }
+
+    const next = getNextVideo(videoId)
+    if (next) {
+      setUpNextVideo(next)
+      setCountdown(5)
+      setShowUpNext(true)
+      countdownRef.current = setInterval(() => {
+        setCountdown(c => {
+          if (c <= 1) {
+            clearInterval(countdownRef.current!)
+            setShowUpNext(false)
+            setSelectedVideo(next)
+            return 5
+          }
+          return c - 1
+        })
+      }, 1000)
+    }
+
+    router.refresh()
+  } catch (error) {
+    console.error('Error marking as watched:', error)
+    alert('Failed to update status')
+  } finally {
+    setLoading(false)
   }
+}
 
   const cancelAutoAdvance = () => {
     if (countdownRef.current) clearInterval(countdownRef.current)
