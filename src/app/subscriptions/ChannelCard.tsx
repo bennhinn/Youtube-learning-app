@@ -60,6 +60,8 @@ export default function ChannelCard({ channel, color }: ChannelCardProps) {
             gap: 10,
             position: 'relative',
             overflow: 'hidden',
+            width: '100%',          // ensures it fills the grid cell
+            minWidth: 0,             // allows shrinking below content size
           }}
         >
           {/* Subtle colored top glow */}
@@ -97,10 +99,13 @@ export default function ChannelCard({ channel, color }: ChannelCardProps) {
             margin: 0, fontSize: 12, fontWeight: 700,
             color: 'rgba(255,255,255,0.9)',
             textAlign: 'center', lineHeight: 1.3,
-            overflow: 'hidden', textOverflow: 'ellipsis',
-            display: '-webkit-box', WebkitLineClamp: 2,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            display: '-webkit-box',
+            WebkitLineClamp: 2,
             WebkitBoxOrient: 'vertical',
             width: '100%',
+            overflowWrap: 'break-word',   // handles long words
           }}>
             {channel.title}
           </p>
@@ -111,10 +116,13 @@ export default function ChannelCard({ channel, color }: ChannelCardProps) {
               margin: 0, fontSize: 10,
               color: 'rgba(255,255,255,0.3)',
               textAlign: 'center', lineHeight: 1.4,
-              overflow: 'hidden', textOverflow: 'ellipsis',
-              display: '-webkit-box', WebkitLineClamp: 2,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              display: '-webkit-box',
+              WebkitLineClamp: 2,
               WebkitBoxOrient: 'vertical',
               width: '100%',
+              overflowWrap: 'break-word',
             }}>
               {channel.description}
             </p>
