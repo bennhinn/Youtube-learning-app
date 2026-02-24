@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Tv } from 'lucide-react'
 import RefreshSubscriptionsButton from './RefreshButton'
-import ChannelCard from './ChannelCard' // <-- new client component
+import ChannelCard from './ChannelCard'
 import BottomNavClient from '@/components/BottomNavClient'
 
 const GOAL_COLORS = ['#a855f7', '#06b6d4', '#f59e0b', '#10b981', '#ef4444']
@@ -104,8 +104,16 @@ export default async function SubscriptionsPage() {
           <div style={{ position: 'absolute', width: 200, height: 200, borderRadius: '50%', background: '#f59e0b', top: 600, left: -40, opacity: 0.08, filter: 'blur(80px)' }} />
         </div>
 
-        {/* Scrollable body */}
-        <div style={{ position: 'relative', zIndex: 1, overflowY: 'auto', height: '100vh', paddingBottom: 100 }}>
+        {/* Scrollable body — overflow fixed here */}
+        <div style={{
+          position: 'relative',
+          zIndex: 1,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          height: '100vh',
+          paddingBottom: 100,
+          width: '100%',
+        }}>
 
           {/* Header */}
           <div style={{ padding: '52px 20px 20px' }}>
@@ -162,8 +170,13 @@ export default async function SubscriptionsPage() {
 
           {/* Grid of channels */}
           {channels.length > 0 ? (
-            <div style={{ padding: '0 20px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div style={{ padding: '0 20px', width: '100%' }}>
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: 12,
+                width: '100%',
+              }}>
                 {channels.map((channel, i) => {
                   const color = GOAL_COLORS[i % GOAL_COLORS.length]
                   return (
