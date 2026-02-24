@@ -2,12 +2,13 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Home, Target, Tv, User } from 'lucide-react'
+import { Home, Target, Tv, Users, User } from 'lucide-react'
 
 const navItems = [
   { href: '/dashboard', icon: Home, label: 'Home' },
   { href: '/goals', icon: Target, label: 'Goals' },
   { href: '/subscriptions', icon: Tv, label: 'Subscriptions' },
+  { href: '/friends', icon: Users, label: 'Friends' },
   { href: '/profile', icon: User, label: 'Profile' },
 ]
 
@@ -26,7 +27,7 @@ export default function BottomNavClient() {
         display: 'flex',
         justifyContent: 'space-around',
         alignItems: 'center',
-        padding: '10px 8px 28px',
+        padding: '8px 4px 24px', // reduced padding to fit 5 items
         background: 'rgba(8, 11, 18, 0.88)',
         backdropFilter: 'blur(24px)',
         WebkitBackdropFilter: 'blur(24px)',
@@ -44,13 +45,13 @@ export default function BottomNavClient() {
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
-              gap: 3,
-              padding: '6px 16px',
+              gap: 2,
+              padding: '6px 8px', // reduced horizontal padding
               textDecoration: 'none',
             }}
           >
             <Icon
-              size={24}
+              size={22} // slightly smaller
               style={{
                 color: isActive ? PURPLE : 'rgba(255,255,255,0.3)',
                 filter: isActive ? 'drop-shadow(0 0 8px rgba(168,85,247,0.9))' : 'none',
