@@ -1,4 +1,3 @@
-// app/api/friends/accept/route.ts
 import { createClient } from '@/utils/supabase/server'
 import { NextResponse } from 'next/server'
 
@@ -14,10 +13,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'friendId required' }, { status: 400 })
   }
 
-  // Find the pending request where current user is the friend (receiver)
+  // Find the pending request where current user is the receiver (friend_id)
   const { data: friendship, error: findError } = await supabase
     .from('friendships')
-    .select('*')
+    .select('user_id, friend_id, status')
     .eq('user_id', friendId)
     .eq('friend_id', user.id)
     .eq('status', 'pending')
@@ -27,11 +26,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'No pending request found' }, { status: 404 })
   }
 
-  // Update to accepted
+  // Update using the composite key
   const { error: updateError } = await supabase
     .from('friendships')
     .update({ status: 'accepted' })
-    .eq('id', friendship.id)
+    .eq('user_id', friendId)
+    .eq('friend_id', user.id)
 
   if (updateError) {
     console.error(updateError)
