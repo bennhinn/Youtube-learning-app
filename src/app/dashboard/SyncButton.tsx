@@ -1,13 +1,16 @@
 'use client'
 
 import { useState } from 'react'
+import { RefreshCw, CheckCircle, AlertCircle } from 'lucide-react'
 
 export default function SyncButton() {
   const [loading, setLoading] = useState(false)
+  const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle')
   const [message, setMessage] = useState('')
 
   const syncSubscriptions = async () => {
     setLoading(true)
+    setStatus('idle')
     setMessage('')
 
     try {
@@ -15,43 +18,90 @@ export default function SyncButton() {
       const data = await res.json()
 
       if (res.ok) {
-        setMessage(`✅ Synced ${data.count} subscriptions!`)
+        setStatus('success')
+        setMessage(`Synced ${data.count} subscriptions`)
         setTimeout(() => window.location.reload(), 1500)
       } else {
-        setMessage(`❌ Error: ${data.error}`)
+        setStatus('error')
+        setMessage(data.error || 'Sync failed')
       }
-    } catch (error) {
-      setMessage('❌ Failed to sync. Check console.')
+    } catch {
+      setStatus('error')
+      setMessage('Failed to sync')
     } finally {
       setLoading(false)
     }
   }
 
+  const color =
+    status === 'success' ? '#10b981' :
+    status === 'error'   ? '#ef4444' :
+    '#06b6d4'
+
+  const borderColor =
+    status === 'success' ? 'rgba(16,185,129,0.3)' :
+    status === 'error'   ? 'rgba(239,68,68,0.3)'  :
+    'rgba(6,182,212,0.3)'
+
+  const bgColor =
+    status === 'success' ? 'rgba(16,185,129,0.12)' :
+    status === 'error'   ? 'rgba(239,68,68,0.12)'  :
+    'rgba(6,182,212,0.12)'
+
+  const label =
+    loading              ? 'Syncing…'  :
+    status === 'success' ? 'Synced!'   :
+    status === 'error'   ? 'Failed'    :
+    'Sync'
+
   return (
-    <div>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
       <button
         onClick={syncSubscriptions}
         disabled={loading}
-        className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-50 px-4 py-3 font-medium text-blue-700 transition hover:bg-blue-100 disabled:opacity-50"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          background: bgColor,
+          border: `1px solid ${borderColor}`,
+          borderRadius: 20,
+          padding: '7px 14px',
+          color,
+          fontSize: 12,
+          fontWeight: 700,
+          fontFamily: "'Syne', sans-serif",
+          cursor: loading ? 'not-allowed' : 'pointer',
+          opacity: loading ? 0.7 : 1,
+          transition: 'all 0.2s ease',
+          whiteSpace: 'nowrap',
+        }}
       >
         {loading ? (
-          <>
-            <svg className="size-5 animate-spin text-blue-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            <span>Syncing...</span>
-          </>
+          <RefreshCw size={14} style={{ animation: 'syncspin 0.75s linear infinite' }} />
+        ) : status === 'success' ? (
+          <CheckCircle size={14} />
+        ) : status === 'error' ? (
+          <AlertCircle size={14} />
         ) : (
-          <>
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="size-5">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
-            </svg>
-            <span>Sync YouTube Subscriptions</span>
-          </>
+          <RefreshCw size={14} />
         )}
+        {label}
       </button>
-      {message && <p className="mt-2 text-sm">{message}</p>}
+
+      {message && !loading && (
+        <p style={{
+          margin: 0,
+          fontSize: 10,
+          color,
+          fontFamily: "'DM Mono', monospace",
+          letterSpacing: '0.02em',
+        }}>
+          {message}
+        </p>
+      )}
+
+      <style>{`@keyframes syncspin { to { transform: rotate(360deg); } }`}</style>
     </div>
   )
 }

@@ -2,31 +2,22 @@ import { createClient } from '@/utils/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
-import { Suspense } from 'react'
 import {
   BookOpen,
   Play,
   Check,
-  Clock,
   Bell,
-  ChevronRight,
   Download,
   Plus,
   Tv,
   Flame,
-  Home,
-  Target,
-  User,
   Calendar,
-  LogOut,
 } from 'lucide-react'
 import BottomNavClient from '@/components/BottomNavClient'
 import SyncButton from './SyncButton'
 
-// ─── Goal accent colours cycling ─────────────────────────────────────────────
 const GOAL_COLORS = ['#a855f7', '#06b6d4', '#f59e0b', '#10b981', '#ef4444']
 
-// Helper to compute streak (consecutive days with watched videos)
 async function getStreak(userId: string) {
   const supabase = await createClient()
   const thirtyDaysAgo = new Date()
@@ -58,14 +49,12 @@ export default async function DashboardPage() {
   const { data: { user }, error } = await supabase.auth.getUser()
   if (error || !user) redirect('/login')
 
-  // Fetch profile
   const { data: profile } = await supabase
     .from('profiles')
     .select('*')
     .eq('id', user.id)
     .single()
 
-  // Fetch all active goals
   const { data: goals } = await supabase
     .from('goals')
     .select('id, name, progress_percent, target_date')
@@ -73,7 +62,6 @@ export default async function DashboardPage() {
     .eq('status', 'active')
     .order('created_at', { ascending: false })
 
-  // Fetch subscriptions with channel details (for stories)
   const { data: subscriptions } = await supabase
     .from('subscriptions')
     .select(`
@@ -87,7 +75,6 @@ export default async function DashboardPage() {
     .eq('user_id', user.id)
     .limit(8)
 
-  // Flatten channel data (handle array return from join)
   const channels = subscriptions
     ?.map((sub) => (Array.isArray(sub.channel) ? sub.channel[0] : sub.channel))
     .filter((c) => c && c.youtube_channel_id) || []
@@ -102,7 +89,6 @@ export default async function DashboardPage() {
     .select('*', { count: 'exact', head: true })
     .eq('user_id', user.id)
 
-  // Fetch recently watched videos (last 3)
   const { data: recentProgress } = await supabase
     .from('progress')
     .select(`
@@ -186,30 +172,29 @@ export default async function DashboardPage() {
           scrollbar-width: none;
         }
         .scroll-x::-webkit-scrollbar { display: none; }
-        .stat-card {
-          transition: transform 0.15s ease;
-        }
-        .stat-card:active {
-          transform: scale(0.96);
-        }
-        .channel-story:active {
-          transform: scale(0.94);
-        }
-        .goal-card:active {
-          transform: scale(0.98);
-        }
-        .avatar-btn {
-          transition: opacity 0.15s ease, transform 0.15s ease;
-        }
-        .avatar-btn:hover {
-          opacity: 0.85;
-          transform: scale(0.97);
-        }
-        .icon-btn {
-          transition: background 0.15s ease;
-        }
-        .icon-btn:hover {
-          background: rgba(255,255,255,0.12) !important;
+        .stat-card { transition: transform 0.15s ease; }
+        .stat-card:active { transform: scale(0.96); }
+        .channel-story:active { transform: scale(0.94); }
+        .goal-card:active { transform: scale(0.98); }
+        .avatar-btn { transition: opacity 0.15s ease, transform 0.15s ease; }
+        .avatar-btn:hover { opacity: 0.85; transform: scale(0.97); }
+        .icon-btn { transition: background 0.15s ease; }
+        .icon-btn:hover { background: rgba(255,255,255,0.12) !important; }
+        .fab {
+          position: fixed;
+          right: 20px;
+          bottom: 108px; /* raised higher to clear bottom nav */
+          z-index: 50;
+          background: linear-gradient(135deg, #a855f7, #7c3aed);
+          color: white;
+          width: 52px;
+          height: 52px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 0 30px rgba(168,85,247,0.6);
+          text-decoration: none;
         }
       `}</style>
 
@@ -234,8 +219,15 @@ export default async function DashboardPage() {
           <div style={{ position: 'absolute', width: 200, height: 200, borderRadius: '50%', background: '#f59e0b', top: 600, left: -40, opacity: 0.08, filter: 'blur(80px)' }} />
         </div>
 
-        {/* Scrollable body */}
-        <div style={{ position: 'relative', zIndex: 1, overflowY: 'auto', height: '100vh', paddingBottom: 88 }}>
+        {/* Scrollable body — extra paddingBottom to clear FAB + nav */}
+        <div style={{
+          position: 'relative',
+          zIndex: 1,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          height: '100vh',
+          paddingBottom: 160,
+        }}>
 
           {/* ── Top Bar ── */}
           <div style={{
@@ -245,7 +237,6 @@ export default async function DashboardPage() {
             padding: '52px 20px 16px',
             gap: 12,
           }}>
-            {/* Left: greeting + name — shrinks if name is long */}
             <div style={{ flex: 1, minWidth: 0 }}>
               <p style={{ margin: 0, fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.35)' }}>
                 {greeting}
@@ -263,47 +254,33 @@ export default async function DashboardPage() {
               </h1>
             </div>
 
-            {/* Right: icons — never shrink */}
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
               <button
                 className="icon-btn"
                 aria-label="Notifications"
                 style={{
-                  width: 34,
-                  height: 34,
-                  borderRadius: '50%',
+                  width: 34, height: 34, borderRadius: '50%',
                   background: 'rgba(255,255,255,0.06)',
                   border: '1px solid rgba(255,255,255,0.1)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
                   cursor: 'pointer',
                 }}
               >
                 <Bell size={16} color="white" />
               </button>
 
-              {/* Avatar — tapping signs out */}
               <form action="/auth/signout" method="post" style={{ margin: 0 }}>
                 <button
                   type="submit"
                   className="avatar-btn"
                   aria-label="Sign out"
-                  title="Sign out"
                   style={{
-                    width: 34,
-                    height: 34,
-                    borderRadius: '50%',
+                    width: 34, height: 34, borderRadius: '50%',
                     background: 'linear-gradient(135deg, #a855f7, #06b6d4)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontWeight: 700,
-                    fontSize: 13,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontWeight: 700, fontSize: 13,
                     fontFamily: "'Syne', sans-serif",
-                    border: 'none',
-                    cursor: 'pointer',
-                    color: 'white',
+                    border: 'none', cursor: 'pointer', color: 'white',
                   }}
                 >
                   {initials}
@@ -317,10 +294,7 @@ export default async function DashboardPage() {
             {topGoal ? (
               <Link href={`/goals/${topGoal.id}`} style={{ textDecoration: 'none' }}>
                 <div style={{
-                  borderRadius: 24,
-                  overflow: 'hidden',
-                  position: 'relative',
-                  height: 210,
+                  borderRadius: 24, overflow: 'hidden', position: 'relative', height: 210,
                   background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0c0a1e 100%)',
                   border: '1px solid rgba(168,85,247,0.25)',
                   boxShadow: '0 0 40px rgba(168,85,247,0.15)',
@@ -453,7 +427,6 @@ export default async function DashboardPage() {
                   return (
                     <Link key={goal.id} href={`/goals/${goal.id}`} style={{ textDecoration: 'none' }}>
                       <div className="card-glass goal-card" style={{ padding: '16px 18px', position: 'relative', overflow: 'hidden', transition: 'transform 0.15s' }}>
-                        {/* left glow bar */}
                         <div style={{ position: 'absolute', left: 0, top: '20%', bottom: '20%', width: 3, borderRadius: '0 3px 3px 0', background: color, boxShadow: `0 0 12px ${color}` }} />
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6, paddingLeft: 10 }}>
                           <div style={{ flex: 1, minWidth: 0 }}>
@@ -532,28 +505,8 @@ export default async function DashboardPage() {
 
         </div>
 
-        {/* ── FAB ── */}
-        <Link
-          href="/goals/new"
-          aria-label="Create new goal"
-          style={{
-            position: 'fixed',
-            right: 20,
-            bottom: 88,
-            zIndex: 50,
-            background: 'linear-gradient(135deg, #a855f7, #7c3aed)',
-            color: 'white',
-            width: 52,
-            height: 52,
-            borderRadius: '50%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 24,
-            boxShadow: '0 0 30px rgba(168,85,247,0.6)',
-            textDecoration: 'none',
-          }}
-        >
+        {/* ── FAB — outside scroll container, uses .fab class ── */}
+        <Link href="/goals/new" aria-label="Create new goal" className="fab">
           <Plus size={24} />
         </Link>
 
