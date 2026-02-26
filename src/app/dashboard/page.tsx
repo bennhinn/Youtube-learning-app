@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import BottomNavClient from '@/components/BottomNavClient'
 import SyncButton from './SyncButton'
+import ActivityFeed from './ActivityFeed'  // <-- import the feed
 
 const GOAL_COLORS = ['#a855f7', '#06b6d4', '#f59e0b', '#10b981', '#ef4444']
 
@@ -491,6 +492,9 @@ export default async function DashboardPage() {
               </div>
             </div>
           )}
+
+          {/* ── Friend Activity Feed ── */}
+          <ActivityFeed />
 
           {/* ── YouTube Sync ── */}
           <div style={{ padding: '0 20px 8px' }}>

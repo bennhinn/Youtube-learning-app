@@ -211,8 +211,8 @@ export default async function GoalDetailPage({ params }: PageProps) {
             </div>
           </div>
 
-          {/* Video list */}
-          <VideoList goalId={goal.id} initialItems={pathItems} />
+          {/* Video list - now with goalName prop */}
+          <VideoList goalId={goal.id} initialItems={pathItems} goalName={goal.name} />
         </div>
       </div>
     </>

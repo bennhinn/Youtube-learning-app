@@ -8,6 +8,7 @@ import {
   BookOpen, Flame, Trophy, HelpCircle, Lightbulb,
   Save, X, SkipForward
 } from 'lucide-react'
+import { logActivity } from '@/utils/activity'
 
 interface VideoItem {
   position: number
@@ -27,43 +28,44 @@ interface VideoItem {
 interface VideoListProps {
   goalId: string
   initialItems: VideoItem[]
+  goalName: string  // added for completion logging
 }
 
 type Comprehension = 'confused' | 'got_it' | 'can_teach'
 
 const COMPREHENSION_OPTIONS: { value: Comprehension; label: string; emoji: string; color: string }[] = [
-  { value: 'confused',   label: 'Confused',      emoji: '😕', color: '#ef4444' },
-  { value: 'got_it',     label: 'Got it',         emoji: '👍', color: '#f59e0b' },
-  { value: 'can_teach',  label: 'Could teach it', emoji: '🔥', color: '#10b981' },
+  { value: 'confused', label: 'Confused', emoji: '😕', color: '#ef4444' },
+  { value: 'got_it', label: 'Got it', emoji: '👍', color: '#f59e0b' },
+  { value: 'can_teach', label: 'Could teach it', emoji: '🔥', color: '#10b981' },
 ]
 
-export default function VideoList({ goalId, initialItems }: VideoListProps) {
-  const [items, setItems]               = useState(initialItems)
-  const [loading, setLoading]           = useState(false)
+export default function VideoList({ goalId, initialItems, goalName }: VideoListProps) {
+  const [items, setItems] = useState(initialItems)
+  const [loading, setLoading] = useState(false)
   const [selectedVideo, setSelectedVideo] = useState<VideoItem['video'] | null>(
     items.length > 0 ? items[0].video : null
   )
 
   // Notes
-  const [note, setNote]             = useState('')
+  const [note, setNote] = useState('')
   const [noteSaving, setNoteSaving] = useState(false)
-  const [noteSaved, setNoteSaved]   = useState(false)
-  const notesCache                  = useRef<Record<string, string>>({})
-  const noteDebounce                = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [noteSaved, setNoteSaved] = useState(false)
+  const notesCache = useRef<Record<string, string>>({})
+  const noteDebounce = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Comprehension
-  const [comprehension, setComprehension]   = useState<Comprehension | null>(null)
-  const comprehensionCache                  = useRef<Record<string, Comprehension>>({})
+  const [comprehension, setComprehension] = useState<Comprehension | null>(null)
+  const comprehensionCache = useRef<Record<string, Comprehension>>({})
 
   // Auto-advance
-  const [showUpNext, setShowUpNext]         = useState(false)
-  const [upNextVideo, setUpNextVideo]       = useState<VideoItem['video'] | null>(null)
-  const [countdown, setCountdown]           = useState(5)
-  const countdownRef                        = useRef<ReturnType<typeof setInterval> | null>(null)
+  const [showUpNext, setShowUpNext] = useState(false)
+  const [upNextVideo, setUpNextVideo] = useState<VideoItem['video'] | null>(null)
+  const [countdown, setCountdown] = useState(5)
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // Session recap
   const [sessionWatched, setSessionWatched] = useState<string[]>([])
-  const [showRecap, setShowRecap]           = useState(false)
+  const [showRecap, setShowRecap] = useState(false)
 
   const router = useRouter()
   const supabase = createClient()
@@ -81,12 +83,12 @@ export default function VideoList({ goalId, initialItems }: VideoListProps) {
     .filter(i => i.status !== 'watched')
     .reduce((acc, i) => acc + (i.video.duration || 0), 0)
 
-  const watchedCount   = items.filter(i => i.status === 'watched').length
-  const totalVideos    = items.length
+  const watchedCount = items.filter(i => i.status === 'watched').length
+  const totalVideos = items.length
   const progressPercent = totalVideos > 0 ? Math.round((watchedCount / totalVideos) * 100) : 0
 
   const currentItem = items.find(i => i.video.youtube_video_id === selectedVideo?.youtube_video_id)
-  const isWatched   = currentItem?.status === 'watched'
+  const isWatched = currentItem?.status === 'watched'
 
   const getNextVideo = useCallback((afterId: string) => {
     const idx = items.findIndex(i => i.video.youtube_video_id === afterId)
@@ -183,86 +185,101 @@ export default function VideoList({ goalId, initialItems }: VideoListProps) {
       .eq('video_id', selectedVideo.youtube_video_id)
   }
 
-  // ── Mark as watched (original logic untouched) ────────────────────────────
+  // ── Mark as watched ──────────────────────────────────────────────────────
   const markAsWatched = async (videoId: string, position: number) => {
-  setLoading(true)
-  try {
-    const { error: updateError } = await supabase
-      .from('learning_paths')
-      .update({ status: 'watched' })
-      .eq('goal_id', goalId)
-      .eq('video_id', videoId)
+    setLoading(true)
+    try {
+      const { error: updateError } = await supabase
+        .from('learning_paths')
+        .update({ status: 'watched' })
+        .eq('goal_id', goalId)
+        .eq('video_id', videoId)
 
-    if (updateError) throw updateError
+      if (updateError) throw updateError
 
-    const { error: progressError } = await supabase
-      .from('progress')
-      .insert({
-        user_id: (await supabase.auth.getUser()).data.user?.id,
-        video_id: videoId,
-        watched_at: new Date().toISOString(),
+      const { error: progressError } = await supabase
+        .from('progress')
+        .insert({
+          user_id: (await supabase.auth.getUser()).data.user?.id,
+          video_id: videoId,
+          watched_at: new Date().toISOString(),
+        })
+
+      if (progressError) console.warn('Progress insert warning:', progressError)
+
+      // Log watch activity (already present)
+      await logActivity('watch', 'video', videoId, {
+        title: selectedVideo?.title,
+        channel: selectedVideo?.channel_title,
+        goalId,
       })
 
-    if (progressError) console.warn('Progress insert warning:', progressError)
+      // Update local state and check for goal completion
+      setItems(prev => {
+        const updated = prev.map(item =>
+          item.video.youtube_video_id === videoId
+            ? { ...item, status: 'watched' }
+            : item
+        )
 
-    setItems(prev => {
-      const updated = prev.map(item =>
-        item.video.youtube_video_id === videoId
-          ? { ...item, status: 'watched' }
-          : item
-      )
+        // Calculate new watched count
+        const watchedNow = updated.filter(i => i.status === 'watched').length
+        const total = updated.length
 
-      // --- NEW: Update goal progress in the database ---
-      const watchedCount = updated.filter(i => i.status === 'watched').length
-      const totalVideos = updated.length
-      const newProgress = totalVideos > 0 ? Math.round((watchedCount / totalVideos) * 100) : 0
+        // Update goal progress in database
+        const newProgress = total > 0 ? Math.round((watchedNow / total) * 100) : 0
+        supabase
+          .from('goals')
+          .update({ progress_percent: newProgress })
+          .eq('id', goalId)
+          .then(({ error }) => {
+            if (error) console.error('Failed to update goal progress:', error)
+          })
 
-      supabase
-        .from('goals')
-        .update({ progress_percent: newProgress })
-        .eq('id', goalId)
-        .then(({ error }) => {
-          if (error) console.error('Failed to update goal progress:', error)
-        })
-      // ------------------------------------------------
+        // If goal just completed, log completion (fire and forget)
+        if (watchedNow === total && total > 0) {
+          logActivity('complete_goal', 'goal', goalId, {
+            name: goalName,
+          }).catch(console.error)
+        }
 
-      return updated
-    })
+        return updated
+      })
 
-    // Track session
-    const newSession = [...sessionWatched, videoId]
-    setSessionWatched(newSession)
+      // Track session
+      const newSession = [...sessionWatched, videoId]
+      setSessionWatched(newSession)
 
-    if (newSession.length >= 3 && newSession.length % 3 === 0) {
-      setShowRecap(true)
+      if (newSession.length >= 3 && newSession.length % 3 === 0) {
+        setShowRecap(true)
+      }
+
+      const next = getNextVideo(videoId)
+      if (next) {
+        setUpNextVideo(next)
+        setCountdown(5)
+        setShowUpNext(true)
+        countdownRef.current = setInterval(() => {
+          setCountdown(c => {
+            if (c <= 1) {
+              clearInterval(countdownRef.current!)
+              setShowUpNext(false)
+              setSelectedVideo(next)
+              return 5
+            }
+            return c - 1
+          })
+        }, 1000)
+      }
+
+      router.refresh()
+    } catch (error) {
+      console.error('Error marking as watched:', error)
+      alert('Failed to update status')
+    } finally {
+      setLoading(false)
     }
-
-    const next = getNextVideo(videoId)
-    if (next) {
-      setUpNextVideo(next)
-      setCountdown(5)
-      setShowUpNext(true)
-      countdownRef.current = setInterval(() => {
-        setCountdown(c => {
-          if (c <= 1) {
-            clearInterval(countdownRef.current!)
-            setShowUpNext(false)
-            setSelectedVideo(next)
-            return 5
-          }
-          return c - 1
-        })
-      }, 1000)
-    }
-
-    router.refresh()
-  } catch (error) {
-    console.error('Error marking as watched:', error)
-    alert('Failed to update status')
-  } finally {
-    setLoading(false)
   }
-}
 
   const cancelAutoAdvance = () => {
     if (countdownRef.current) clearInterval(countdownRef.current)
@@ -514,9 +531,9 @@ export default function VideoList({ goalId, initialItems }: VideoListProps) {
           {/* Scrollable list */}
           <div style={{ overflowY: 'auto', flex: 1 }}>
             {items.map((item, index) => {
-              const isSelected    = selectedVideo?.youtube_video_id === item.video.youtube_video_id
+              const isSelected = selectedVideo?.youtube_video_id === item.video.youtube_video_id
               const isItemWatched = item.status === 'watched'
-              const rating        = comprehensionCache.current[item.video.youtube_video_id]
+              const rating = comprehensionCache.current[item.video.youtube_video_id]
               return (
                 <div
                   key={item.video.youtube_video_id}
@@ -599,8 +616,8 @@ export default function VideoList({ goalId, initialItems }: VideoListProps) {
             {/* Stats */}
             <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
               {[
-                { label: 'Videos',   value: sessionWatched.length, color: '#a855f7', icon: '▶' },
-                { label: 'Time',     value: formatDuration(sessionDuration) || '—', color: '#06b6d4', icon: '⏱' },
+                { label: 'Videos', value: sessionWatched.length, color: '#a855f7', icon: '▶' },
+                { label: 'Time', value: formatDuration(sessionDuration) || '—', color: '#06b6d4', icon: '⏱' },
                 { label: 'Progress', value: `${progressPercent}%`, color: '#10b981', icon: '📈' },
               ].map(s => (
                 <div key={s.label} style={{ flex: 1, background: `${s.color}12`, border: `1px solid ${s.color}30`, borderRadius: 14, padding: '12px 8px', textAlign: 'center' }}>

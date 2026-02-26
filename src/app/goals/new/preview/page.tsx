@@ -74,6 +74,8 @@ export default function PreviewPage() {
                 .eq('id', user.id)
                 .single()
 
+                
+
             if (profileCheckError && profileCheckError.code === 'PGRST116') {
                 const { error: createProfileError } = await supabase
                     .from('profiles')
@@ -95,6 +97,8 @@ export default function PreviewPage() {
                 })
                 .select('id')
                 .single()
+
+                
 
             if (goalError) throw new Error(`Failed to create goal: ${goalError.message}`)
 
