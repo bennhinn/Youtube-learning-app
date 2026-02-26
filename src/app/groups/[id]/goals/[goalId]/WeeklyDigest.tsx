@@ -111,19 +111,20 @@ export default function WeeklyDigest({ groupId }: WeeklyDigestProps) {
       `}</style>
 
       <div style={{ marginBottom: 20, animation: 'slideIn 0.3s ease forwards' }}>
-        {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-          <div style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg,rgba(245,158,11,0.15),rgba(239,68,68,0.15))', border: '1px solid rgba(245,158,11,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <Trophy size={13} color="#f59e0b" />
-          </div>
-          <div style={{ flex: 1 }}>
-            <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: 'white', fontFamily: "'Syne',sans-serif", letterSpacing: '-0.01em' }}>Group Leaderboard</p>
-            <p style={{ margin: 0, fontSize: 10, color: 'rgba(255,255,255,0.3)', fontFamily: "'DM Mono',monospace" }}>all time</p>
-          </div>
-        </div>
 
         {/* Card */}
         <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 20, overflow: 'hidden' }}>
+
+          {/* Header inside card */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px 0' }}>
+            <div style={{ width: 30, height: 30, borderRadius: 9, background: 'linear-gradient(135deg,rgba(245,158,11,0.15),rgba(239,68,68,0.15))', border: '1px solid rgba(245,158,11,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 0 12px rgba(245,158,11,0.15)' }}>
+              <Trophy size={14} color="#f59e0b" />
+            </div>
+            <div style={{ flex: 1 }}>
+              <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: 'white', fontFamily: "'Syne',sans-serif", letterSpacing: '-0.01em' }}>Group Leaderboard</p>
+              <p style={{ margin: 0, fontSize: 10, color: 'rgba(255,255,255,0.3)', fontFamily: "'DM Mono',monospace" }}>all time</p>
+            </div>
+          </div>
 
           {/* Tab bar inside card */}
           <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>

@@ -1,42 +1,57 @@
 import { createClient } from '@/utils/supabase/server'
 import { NextResponse } from 'next/server'
 
-// Types for YouTube API responses
+// ── Seed list — known great educational channels ───────────────────────────
+// channel_id : channel_title
+const SEED_CHANNELS: Record<string, string> = {
+  // Web / JS / TS
+  'UCsBjURrPoezykLs9EqgamOA': 'Fireship',
+  'UC29ju8bIPH5as8OGnQzwJyA': 'Traversy Media',
+  'UCFbNIlppjAuEX4znoulh0Cw': 'Web Dev Simplified',
+  'UCnUYZLuoy1rq1aVMwx4aTzw': 'Theo - t3.gg',
+  'UC8butISFwT-Wl7EV0hUK0BQ': 'freeCodeCamp',
+  'UCVyRiMvfUNMA1UPlDPzG5Ow': 'The Primeagen',
+
+  // Python / Data / AI
+  'UCCTVrRjAK3SVa3nCBFyKFTQ': 'Andrej Karpathy',
+  'UCWX3yGbODI3HLSoGPPuuXOw': 'Nicholas Renotte',
+  'UCiT9RITQ9PW6BhXK0y2jaeg': 'Tech With Tim',
+  'UCfzlCWGWYysgXtFoB7cAYSQ': 'Sentdex',
+
+  // CS fundamentals
+  'UClEEsT7DkdVO_fkrBamy0uA': 'CS Dojo',
+  'UCqr-7GDVTsdNBCeufvERYuw': 'George Hotz',
+
+  // CSS / Design
+  'UCJZv4d5rbIKd4QHMPkcABCw': 'Kevin Powell',
+
+  // DevOps / Cloud
+  'UCddiUEpeqJcYeBxX1IVBKvQ': 'TechWorld with Nana',
+  'UC4EY_bNNguRd-OeiC9RBkKg': 'NetworkChuck',
+}
+
+// ── Types ──────────────────────────────────────────────────────────────────
+
 interface YouTubeSearchItem {
-  id: {
-    videoId: string
-  }
+  id: { videoId: string }
   snippet: {
-    title: string
-    description: string
-    thumbnails: {
-      default?: { url: string }
-      high?: { url: string }
-    }
-    channelId: string
-    channelTitle: string
+    title: string; description: string
+    thumbnails: { default?: { url: string }; high?: { url: string } }
+    channelId: string; channelTitle: string
+    publishedAt: string
   }
 }
 
 interface YouTubeVideoItem {
   id: string
   snippet: {
-    title: string
-    description: string
-    thumbnails: {
-      default?: { url: string }
-      high?: { url: string }
-    }
-    channelId: string
-    channelTitle: string
+    title: string; description: string
+    thumbnails: { default?: { url: string }; high?: { url: string } }
+    channelId: string; channelTitle: string
+    publishedAt: string
   }
-  contentDetails: {
-    duration: string
-  }
-  statistics?: {
-    viewCount?: string
-    likeCount?: string
-  }
+  contentDetails: { duration: string }
+  statistics?: { viewCount?: string; likeCount?: string; commentCount?: string }
 }
 
 interface VideoResult {
@@ -49,139 +64,239 @@ interface VideoResult {
   duration: number
   view_count: number
   like_count: number
+  is_trusted: boolean
   score?: number
 }
 
+// ── Main handler ───────────────────────────────────────────────────────────
+
 export async function POST(request: Request) {
   const supabase = await createClient()
-
-  // Authenticate user
   const { data: { user }, error } = await supabase.auth.getUser()
-  if (error || !user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  if (error || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { keywords } = await request.json()
-  if (!keywords) {
-    return NextResponse.json({ error: 'Keywords required' }, { status: 400 })
-  }
+  if (!keywords) return NextResponse.json({ error: 'Keywords required' }, { status: 400 })
 
-  // Get user's subscribed channel IDs
-  const { data: subscriptions } = await supabase
-    .from('subscriptions')
-    .select('channel_id')
-    .eq('user_id', user.id)
-
-  const subscribedChannelIds = subscriptions?.map(s => s.channel_id) || []
-
-  // ── Try session provider_token first, fall back to stored token ──
+  // ── Get access token ──
   const { data: sessionData } = await supabase.auth.getSession()
   let accessToken = sessionData.session?.provider_token
 
   if (!accessToken) {
-    // Fall back to token saved in profiles during OAuth callback
     const { data: profile } = await supabase
       .from('profiles')
       .select('youtube_access_token')
       .eq('id', user.id)
       .single()
-
     accessToken = profile?.youtube_access_token ?? null
   }
 
-  if (!accessToken) {
-    return NextResponse.json({ error: 'YouTube not connected' }, { status: 401 })
-  }
+  if (!accessToken) return NextResponse.json({ error: 'YouTube not connected' }, { status: 401 })
+
+  // ── Seed trusted channels for new users ──
+  await seedTrustedChannels(supabase, user.id)
+
+  // ── Load user's trusted + subscribed channels ──
+  const [{ data: trustedRows }, { data: subscriptions }] = await Promise.all([
+    supabase.from('trusted_channels').select('channel_id').eq('user_id', user.id),
+    supabase.from('subscriptions').select('channel_id').eq('user_id', user.id),
+  ])
+
+  const trustedChannelIds  = new Set(trustedRows?.map(r => r.channel_id) || [])
+  const subscribedChannelIds = new Set(subscriptions?.map(s => s.channel_id) || [])
 
   try {
-    // Split keywords (comma-separated) and trim
+    // ── Parallel search per keyword ──
     const keywordList = keywords.split(',').map((k: string) => k.trim()).filter(Boolean)
-    const searchQuery = keywordList.join(' ')
+    const uniqueKeywords = [...new Set(keywordList)] as string[]
 
-    // Search YouTube videos
-    const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(searchQuery)}&type=video&maxResults=20&videoEmbeddable=true`
+    const searchPromises = uniqueKeywords.map(kw =>
+      searchYouTube(kw, accessToken!, 15)
+    )
+    const searchResults = await Promise.all(searchPromises)
 
-    const searchRes = await fetch(searchUrl, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    })
-
-    if (!searchRes.ok) {
-      const errorData = await searchRes.json()
-      console.error('YouTube search error:', errorData)
-      return NextResponse.json({ error: 'YouTube search failed' }, { status: searchRes.status })
-    }
-
-    const searchData = await searchRes.json() as { items: YouTubeSearchItem[] }
-
-    if (!searchData.items || searchData.items.length === 0) {
-      return NextResponse.json({ videos: [] })
-    }
-
-    // Get video details (duration, statistics) via videos.list
-    const videoIds = searchData.items.map((item) => item.id.videoId).join(',')
-    const videoDetailsUrl = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails,statistics,snippet&id=${videoIds}`
-
-    const detailsRes = await fetch(videoDetailsUrl, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    })
-
-    if (!detailsRes.ok) {
-      console.error('Video details fetch failed')
-      return NextResponse.json({ error: 'Failed to fetch video details' }, { status: 500 })
-    }
-
-    const detailsData = await detailsRes.json() as { items: YouTubeVideoItem[] }
-
-    // Combine and rank
-    let videos: (VideoResult & { score: number })[] = detailsData.items.map((item) => {
-      const duration = parseDuration(item.contentDetails.duration)
-      const viewCount = item.statistics?.viewCount ? parseInt(item.statistics.viewCount) : 0
-      const likeCount = item.statistics?.likeCount ? parseInt(item.statistics.likeCount) : 0
-
-      return {
-        youtube_video_id: item.id,
-        title: item.snippet.title,
-        description: item.snippet.description,
-        thumbnail_url: item.snippet.thumbnails.high?.url || item.snippet.thumbnails.default?.url || '',
-        channel_id: item.snippet.channelId,
-        channel_title: item.snippet.channelTitle,
-        duration,
-        view_count: viewCount,
-        like_count: likeCount,
-        score: 0,
+    // Deduplicate by videoId — keep first occurrence
+    const seenIds = new Set<string>()
+    const allItems: YouTubeSearchItem[] = []
+    for (const items of searchResults) {
+      for (const item of items) {
+        if (!seenIds.has(item.id.videoId)) {
+          seenIds.add(item.id.videoId)
+          allItems.push(item)
+        }
       }
-    })
+    }
 
-    // Calculate scores
-    videos = videos.map((video) => ({
-      ...video,
-      score: (subscribedChannelIds.includes(video.channel_id) ? 100 : 0) +
-             (video.view_count ? Math.log10(video.view_count + 1) * 10 : 0) +
-             (video.like_count ? Math.log10(video.like_count + 1) * 5 : 0)
-    }))
+    if (allItems.length === 0) return NextResponse.json({ videos: [] })
+
+    // ── Fetch full details in batches of 50 ──
+    const videoIds = allItems.map(i => i.id.videoId)
+    const detailItems = await fetchVideoDetails(videoIds, accessToken!)
+
+    // ── Channel frequency map (appears in results = topic specialist) ──
+    const channelFreq: Record<string, number> = {}
+    for (const item of detailItems) {
+      channelFreq[item.snippet.channelId] = (channelFreq[item.snippet.channelId] || 0) + 1
+    }
+
+    // ── Build and score videos ──
+    let videos: (VideoResult & { score: number })[] = detailItems
+      .map(item => {
+        const duration  = parseDuration(item.contentDetails.duration)
+        const viewCount = parseInt(item.statistics?.viewCount  || '0')
+        const likeCount = parseInt(item.statistics?.likeCount  || '0')
+        const isTrusted = trustedChannelIds.has(item.snippet.channelId)
+
+        return {
+          youtube_video_id: item.id,
+          title:            item.snippet.title,
+          description:      item.snippet.description,
+          thumbnail_url:    item.snippet.thumbnails.high?.url || item.snippet.thumbnails.default?.url || '',
+          channel_id:       item.snippet.channelId,
+          channel_title:    item.snippet.channelTitle,
+          published_at:     item.snippet.publishedAt,
+          duration,
+          view_count:       viewCount,
+          like_count:       likeCount,
+          is_trusted:       isTrusted,
+          score:            scoreVideo({
+            viewCount, likeCount, duration,
+            publishedAt:    item.snippet.publishedAt,
+            channelId:      item.snippet.channelId,
+            channelFreq,
+            isTrusted,
+            isSubscribed:   subscribedChannelIds.has(item.snippet.channelId),
+          }),
+        }
+      })
+      // ── Hard filters ──
+      .filter(v => v.duration > 180)        // > 3 minutes
+      .filter(v => v.view_count >= 1000)     // has real audience
+      .filter(v => v.like_count > 0)         // has engagement
 
     // Sort by score descending
     videos.sort((a, b) => b.score - a.score)
 
-    // Remove score before sending to client
-    const result: VideoResult[] = videos.map(({ score, ...rest }) => rest)
+    // Return top 20, strip internal score
+    const result: VideoResult[] = videos.slice(0, 20).map(({ score, ...rest }) => rest)
 
     return NextResponse.json({ videos: result })
-  } catch (error) {
-    console.error('Error generating path:', error)
+  } catch (err) {
+    console.error('Error generating path:', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
 
-// Helper to convert ISO 8601 duration (e.g., PT1H2M10S) to seconds
+// ── Scoring ────────────────────────────────────────────────────────────────
+
+function scoreVideo({
+  viewCount, likeCount, duration, publishedAt,
+  channelId, channelFreq, isTrusted, isSubscribed,
+}: {
+  viewCount: number; likeCount: number; duration: number
+  publishedAt: string; channelId: string
+  channelFreq: Record<string, number>; isTrusted: boolean; isSubscribed: boolean
+}): number {
+
+  // 1. Quality score — like/view ratio (best proxy for "did people find this useful")
+  const likeRatio   = viewCount > 0 ? (likeCount / viewCount) : 0
+  const qualityScore = Math.min(likeRatio * 1000, 100)  // caps at 10% ratio = 100pts
+
+  // 2. Channel trust
+  let channelTrust = 0
+  if (isTrusted)    channelTrust  = 100
+  else if (isSubscribed) channelTrust = 60
+  // Frequency boost — channel appears 3+ times = likely a specialist
+  const freq = channelFreq[channelId] || 0
+  if (freq >= 3)    channelTrust = Math.min(channelTrust + 30, 100)
+  else if (freq >= 2) channelTrust = Math.min(channelTrust + 15, 100)
+
+  // 3. Duration fit — bell curve peaking at 8–20 min (learning sweet spot)
+  let durationScore = 0
+  const mins = duration / 60
+  if      (mins < 3)   durationScore = 0     // too short
+  else if (mins < 5)   durationScore = 40
+  else if (mins < 8)   durationScore = 70
+  else if (mins < 20)  durationScore = 100   // sweet spot
+  else if (mins < 35)  durationScore = 80
+  else if (mins < 60)  durationScore = 60
+  else                 durationScore = 40    // long but still valuable
+
+  // 4. Recency — newer content scores higher for fast-moving tech topics
+  const ageMonths = (Date.now() - new Date(publishedAt).getTime()) / (1000 * 60 * 60 * 24 * 30)
+  let recencyScore = 0
+  if      (ageMonths < 6)   recencyScore = 100
+  else if (ageMonths < 12)  recencyScore = 85
+  else if (ageMonths < 24)  recencyScore = 65
+  else if (ageMonths < 48)  recencyScore = 45
+  else                      recencyScore = 25
+
+  // 5. Popularity — log scale so viral outliers don't dominate
+  const popularityScore = Math.min(Math.log10(viewCount + 1) * 14, 100)
+
+  // Weighted composite
+  return (
+    qualityScore    * 0.35 +
+    channelTrust    * 0.25 +
+    durationScore   * 0.20 +
+    recencyScore    * 0.10 +
+    popularityScore * 0.10
+  )
+}
+
+// ── YouTube API helpers ────────────────────────────────────────────────────
+
+async function searchYouTube(query: string, token: string, maxResults = 15): Promise<YouTubeSearchItem[]> {
+  const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query)}&type=video&maxResults=${maxResults}&videoEmbeddable=true&relevanceLanguage=en`
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+  if (!res.ok) return []
+  const data = await res.json()
+  return data.items || []
+}
+
+async function fetchVideoDetails(videoIds: string[], token: string): Promise<YouTubeVideoItem[]> {
+  // Batch into chunks of 50 (API limit)
+  const chunks: string[][] = []
+  for (let i = 0; i < videoIds.length; i += 50) chunks.push(videoIds.slice(i, i + 50))
+
+  const results: YouTubeVideoItem[] = []
+  for (const chunk of chunks) {
+    const url = `https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails,statistics&id=${chunk.join(',')}`
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+    if (!res.ok) continue
+    const data = await res.json()
+    results.push(...(data.items || []))
+  }
+  return results
+}
+
+// ── Seed trusted channels ─────────────────────────────────────────────────
+
+async function seedTrustedChannels(supabase: any, userId: string) {
+  // Check if user already has trusted channels
+  const { count } = await supabase
+    .from('trusted_channels')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId)
+
+  if (count && count > 0) return  // already seeded
+
+  const rows = Object.entries(SEED_CHANNELS).map(([channel_id, channel_title]) => ({
+    user_id: userId,
+    channel_id,
+    channel_title,
+    is_seed: true,
+  }))
+
+  await supabase.from('trusted_channels').insert(rows)
+}
+
+// ── Duration parser ───────────────────────────────────────────────────────
+
 function parseDuration(duration: string): number {
-  const regex = /PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/
-  const match = duration.match(regex)
+  const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/)
   if (!match) return 0
-
-  const hours = parseInt(match[1] || '0')
-  const minutes = parseInt(match[2] || '0')
-  const seconds = parseInt(match[3] || '0')
-
-  return hours * 3600 + minutes * 60 + seconds
+  return (parseInt(match[1] || '0') * 3600) +
+         (parseInt(match[2] || '0') * 60)   +
+          parseInt(match[3] || '0')
 }
