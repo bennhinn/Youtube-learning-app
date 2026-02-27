@@ -1,35 +1,6 @@
 import { createClient } from '@/utils/supabase/server'
 import { NextResponse } from 'next/server'
 
-// ── Seed list — known great educational channels ───────────────────────────
-// channel_id : channel_title
-const SEED_CHANNELS: Record<string, string> = {
-  // Web / JS / TS
-  'UCsBjURrPoezykLs9EqgamOA': 'Fireship',
-  'UC29ju8bIPH5as8OGnQzwJyA': 'Traversy Media',
-  'UCFbNIlppjAuEX4znoulh0Cw': 'Web Dev Simplified',
-  'UCnUYZLuoy1rq1aVMwx4aTzw': 'Theo - t3.gg',
-  'UC8butISFwT-Wl7EV0hUK0BQ': 'freeCodeCamp',
-  'UCVyRiMvfUNMA1UPlDPzG5Ow': 'The Primeagen',
-
-  // Python / Data / AI
-  'UCCTVrRjAK3SVa3nCBFyKFTQ': 'Andrej Karpathy',
-  'UCWX3yGbODI3HLSoGPPuuXOw': 'Nicholas Renotte',
-  'UCiT9RITQ9PW6BhXK0y2jaeg': 'Tech With Tim',
-  'UCfzlCWGWYysgXtFoB7cAYSQ': 'Sentdex',
-
-  // CS fundamentals
-  'UClEEsT7DkdVO_fkrBamy0uA': 'CS Dojo',
-  'UCqr-7GDVTsdNBCeufvERYuw': 'George Hotz',
-
-  // CSS / Design
-  'UCJZv4d5rbIKd4QHMPkcABCw': 'Kevin Powell',
-
-  // DevOps / Cloud
-  'UCddiUEpeqJcYeBxX1IVBKvQ': 'TechWorld with Nana',
-  'UC4EY_bNNguRd-OeiC9RBkKg': 'NetworkChuck',
-}
-
 // ── Types ──────────────────────────────────────────────────────────────────
 
 interface YouTubeSearchItem {
@@ -92,9 +63,6 @@ export async function POST(request: Request) {
   }
 
   if (!accessToken) return NextResponse.json({ error: 'YouTube not connected' }, { status: 401 })
-
-  // ── Seed trusted channels for new users ──
-  await seedTrustedChannels(supabase, user.id)
 
   // ── Load user's trusted + subscribed channels ──
   const [{ data: trustedRows }, { data: subscriptions }] = await Promise.all([
@@ -170,9 +138,10 @@ export async function POST(request: Request) {
         }
       })
       // ── Hard filters ──
-      .filter(v => v.duration > 180)        // > 3 minutes
-      .filter(v => v.view_count >= 1000)     // has real audience
-      .filter(v => v.like_count > 0)         // has engagement
+      // NOTE: YouTube API returns likeCount=0 for almost all public videos since Nov 2021.
+      // Never filter on like_count — it would eliminate virtually every result.
+      .filter(v => v.duration > 60)          // > 1 min: removes shorts & trailers
+      .filter(v => v.view_count >= 200)      // some real audience (low bar for niche topics)
 
     // Sort by score descending
     videos.sort((a, b) => b.score - a.score)
@@ -198,9 +167,12 @@ function scoreVideo({
   channelFreq: Record<string, number>; isTrusted: boolean; isSubscribed: boolean
 }): number {
 
-  // 1. Quality score — like/view ratio (best proxy for "did people find this useful")
-  const likeRatio   = viewCount > 0 ? (likeCount / viewCount) : 0
-  const qualityScore = Math.min(likeRatio * 1000, 100)  // caps at 10% ratio = 100pts
+  // 1. Quality score — like/view ratio when available; YouTube hides likes for most
+  // public videos (returns 0 via API since Nov 2021), so fall back to view-based score.
+  const likeRatio    = (viewCount > 0 && likeCount > 0) ? (likeCount / viewCount) : null
+  const qualityScore = likeRatio !== null
+    ? Math.min(likeRatio * 1000, 100)           // like/view ratio: 10% ratio = 100pts
+    : Math.min(Math.log10(viewCount + 1) * 18, 100)  // fallback: log-scale views
 
   // 2. Channel trust
   let channelTrust = 0
@@ -268,27 +240,6 @@ async function fetchVideoDetails(videoIds: string[], token: string): Promise<You
     results.push(...(data.items || []))
   }
   return results
-}
-
-// ── Seed trusted channels ─────────────────────────────────────────────────
-
-async function seedTrustedChannels(supabase: any, userId: string) {
-  // Check if user already has trusted channels
-  const { count } = await supabase
-    .from('trusted_channels')
-    .select('id', { count: 'exact', head: true })
-    .eq('user_id', userId)
-
-  if (count && count > 0) return  // already seeded
-
-  const rows = Object.entries(SEED_CHANNELS).map(([channel_id, channel_title]) => ({
-    user_id: userId,
-    channel_id,
-    channel_title,
-    is_seed: true,
-  }))
-
-  await supabase.from('trusted_channels').insert(rows)
 }
 
 // ── Duration parser ───────────────────────────────────────────────────────

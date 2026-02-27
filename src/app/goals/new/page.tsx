@@ -10,7 +10,6 @@ interface TrustedChannel {
   id: string
   channel_id: string
   channel_title: string
-  is_seed: boolean
 }
 
 export default function NewGoalPage() {
@@ -32,9 +31,8 @@ export default function NewGoalPage() {
       if (!user) return
       supabase
         .from('trusted_channels')
-        .select('id, channel_id, channel_title, is_seed')
+        .select('id, channel_id, channel_title')
         .eq('user_id', user.id)
-        .order('is_seed', { ascending: false })
         .then(({ data }) => setTrustedChannels(data || []))
     })
   }, [])
@@ -58,7 +56,7 @@ export default function NewGoalPage() {
     if (!user) return
     const { data, error } = await supabase
       .from('trusted_channels')
-      .insert({ user_id: user.id, channel_id: channel.channel_id, channel_title: channel.channel_title, is_seed: false })
+      .insert({ user_id: user.id, channel_id: channel.channel_id, channel_title: channel.channel_title })
       .select()
       .single()
     if (!error && data) {
@@ -259,7 +257,7 @@ export default function NewGoalPage() {
                   <div style={{ textAlign: 'left' }}>
                     <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: 'white' }}>Trusted Channels</p>
                     <p style={{ margin: 0, fontSize: 10, color: 'rgba(255,255,255,0.35)', fontFamily: "'DM Mono',monospace" }}>
-                      {trustedChannels.length} channel{trustedChannels.length !== 1 ? 's' : ''} · videos from these rank higher
+                      {trustedChannels.length} channel{trustedChannels.length !== 1 ? 's' : ''} · their videos rank higher in your results
                     </p>
                   </div>
                 </div>
@@ -273,8 +271,7 @@ export default function NewGoalPage() {
                   {trustedChannels.length > 0 && (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginBottom: 14 }}>
                       {trustedChannels.map(ch => (
-                        <div key={ch.id} className={`channel-tag ${ch.is_seed ? 'channel-tag-seed' : ''}`}>
-                          {ch.is_seed && <span style={{ fontSize: 9, color: '#f59e0b' }}>★</span>}
+                        <div key={ch.id} className="channel-tag">
                           {ch.channel_title}
                           <button className="remove-btn" onClick={() => removeTrustedChannel(ch.id)}>
                             <X size={11} />
@@ -325,9 +322,7 @@ export default function NewGoalPage() {
                       </div>
                     )}
 
-                    <p style={{ margin: '8px 0 0', fontSize: 10, color: 'rgba(255,255,255,0.2)', fontFamily: "'DM Mono',monospace" }}>
-                      ★ = pre-loaded quality channels · videos from trusted channels get a 25% score boost
-                    </p>
+                    
                   </div>
                 </div>
               )}
