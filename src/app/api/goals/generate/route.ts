@@ -49,19 +49,8 @@ export async function POST(request: Request) {
   const { keywords } = await request.json()
   if (!keywords) return NextResponse.json({ error: 'Keywords required' }, { status: 400 })
 
-  // ── Get access token ──
-  const { data: sessionData } = await supabase.auth.getSession()
-  let accessToken = sessionData.session?.provider_token
-
-  if (!accessToken) {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('youtube_access_token')
-      .eq('id', user.id)
-      .single()
-    accessToken = profile?.youtube_access_token ?? null
-  }
-
+  // ── Get a valid (auto-refreshed) access token ──
+  const accessToken = await getValidYouTubeToken(supabase, user.id)
   if (!accessToken) return NextResponse.json({ error: 'YouTube not connected' }, { status: 401 })
 
   // ── Load user's trusted + subscribed channels ──
@@ -153,6 +142,88 @@ export async function POST(request: Request) {
   } catch (err) {
     console.error('Error generating path:', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
+// ── Token refresh ─────────────────────────────────────────────────────────
+// Google access tokens expire after 1 hour. This helper checks the stored
+// token age and refreshes it automatically using the refresh token so users
+// never have to sign out and back in.
+
+async function getValidYouTubeToken(supabase: any, userId: string): Promise<string | null> {
+  // 1. Try the live session token first (valid if user just signed in)
+  const { data: sessionData } = await supabase.auth.getSession()
+  const sessionToken = sessionData.session?.provider_token
+  if (sessionToken) return sessionToken
+
+  // 2. Load stored tokens + timestamp from profiles
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('youtube_access_token, youtube_refresh_token, youtube_token_updated_at')
+    .eq('id', userId)
+    .single()
+
+  if (!profile?.youtube_access_token) return null
+
+  // 3. Check if token is still fresh (under 55 min — 5 min safety buffer)
+  const updatedAt = profile.youtube_token_updated_at
+    ? new Date(profile.youtube_token_updated_at).getTime()
+    : 0
+  const ageMinutes = (Date.now() - updatedAt) / 60000
+
+  if (ageMinutes < 55) {
+    return profile.youtube_access_token  // still valid, use it
+  }
+
+  // 4. Token is stale — refresh it using Google's token endpoint
+  if (!profile.youtube_refresh_token) {
+    console.warn('Token expired and no refresh token stored — user must re-authenticate')
+    return null
+  }
+
+  const clientId     = process.env.GOOGLE_CLIENT_ID
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET
+
+  if (!clientId || !clientSecret) {
+    console.warn('GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET not set — cannot refresh token')
+    // Fall back to stored token and hope for the best
+    return profile.youtube_access_token
+  }
+
+  try {
+    const res = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type:    'refresh_token',
+        refresh_token: profile.youtube_refresh_token,
+        client_id:     clientId,
+        client_secret: clientSecret,
+      }),
+    })
+
+    if (!res.ok) {
+      const err = await res.json()
+      console.error('Google token refresh failed:', err)
+      return profile.youtube_access_token  // use stale token as last resort
+    }
+
+    const tokens = await res.json()
+    const newAccessToken = tokens.access_token
+
+    // 5. Persist the fresh token
+    await supabase.from('profiles').update({
+      youtube_access_token:    newAccessToken,
+      youtube_token_updated_at: new Date().toISOString(),
+      // refresh_token only changes if Google rotates it (rare)
+      ...(tokens.refresh_token ? { youtube_refresh_token: tokens.refresh_token } : {}),
+    }).eq('id', userId)
+
+    console.log('YouTube token refreshed successfully')
+    return newAccessToken
+  } catch (err) {
+    console.error('Token refresh error:', err)
+    return profile.youtube_access_token
   }
 }
 
