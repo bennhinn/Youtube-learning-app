@@ -24,6 +24,8 @@ export default function NewGoalPage() {
   const [searchResults,   setSearchResults]   = useState<{ channel_id: string; channel_title: string }[]>([])
   const [searching,       setSearching]       = useState(false)
   const [adding,          setAdding]          = useState<string | null>(null)
+  const [channelError,    setChannelError]    = useState<string | null>(null)
+  const searchTimer = typeof window !== 'undefined' ? { current: null as ReturnType<typeof setTimeout> | null } : { current: null }
 
   // Load trusted channels
   useEffect(() => {
@@ -37,17 +39,31 @@ export default function NewGoalPage() {
     })
   }, [])
 
-  // Search YouTube for channels to add
-  const searchChannels = async (q: string) => {
-    if (!q.trim()) { setSearchResults([]); return }
+  // Search YouTube for channels — debounced 500ms to avoid hammering the API
+  const searchChannels = (q: string) => {
+    setChannelSearch(q)
+    if (searchTimer.current) clearTimeout(searchTimer.current)
+    if (!q.trim()) { setSearchResults([]); setChannelError(null); return }
     setSearching(true)
-    try {
-      const res = await fetch(`/api/channels/search?q=${encodeURIComponent(q)}`)
-      const data = await res.json()
-      setSearchResults(data.channels || [])
-    } finally {
-      setSearching(false)
-    }
+    setChannelError(null)
+    searchTimer.current = setTimeout(async () => {
+      try {
+        const res  = await fetch(`/api/channels/search?q=${encodeURIComponent(q)}`)
+        const data = await res.json()
+        if (!res.ok || data.error) {
+          setChannelError(data.error || 'Search failed')
+          setSearchResults([])
+        } else {
+          setSearchResults(data.channels || [])
+          if ((data.channels || []).length === 0) setChannelError('No channels found')
+        }
+      } catch (e: any) {
+        setChannelError('Network error — check your connection')
+        setSearchResults([])
+      } finally {
+        setSearching(false)
+      }
+    }, 500)
   }
 
   const addTrustedChannel = async (channel: { channel_id: string; channel_title: string }) => {
@@ -71,27 +87,38 @@ export default function NewGoalPage() {
     setTrustedChannels(prev => prev.filter(c => c.id !== id))
   }
 
+  const [generateError, setGenerateError] = useState<string | null>(null)
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
+    setGenerateError(null)
     try {
-      const res = await fetch('/api/goals/generate', {
-        method: 'POST',
+      const res  = await fetch('/api/goals/generate', {
+        method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keywords: formData.keywords }),
+        body:    JSON.stringify({ keywords: formData.keywords }),
       })
+      const data = await res.json()
+
       if (!res.ok) {
-        const error = await res.json()
-        throw new Error(error.error || 'Failed to generate')
+        throw new Error(data.error || `Server error ${res.status}`)
       }
-      const { videos } = await res.json()
-      localStorage.setItem('previewVideos',   JSON.stringify(videos))
-      localStorage.setItem('goalName',        formData.name)
-      localStorage.setItem('goalKeywords',    formData.keywords)
-      localStorage.setItem('goalTargetDate',  formData.targetDate)
+
+      const { videos, debug } = data
+
+      if (!videos || videos.length === 0) {
+        const hint = debug ? `\n\nDebug: ${debug}` : ''
+        throw new Error(`No videos found for those keywords. Try broader terms or different keywords.${hint}`)
+      }
+
+      localStorage.setItem('previewVideos',  JSON.stringify(videos))
+      localStorage.setItem('goalName',       formData.name)
+      localStorage.setItem('goalKeywords',   formData.keywords)
+      localStorage.setItem('goalTargetDate', formData.targetDate)
       router.push('/goals/new/preview')
     } catch (error: any) {
-      alert(error.message || 'Failed to generate learning path.')
+      setGenerateError(error.message || 'Failed to generate learning path.')
     } finally {
       setLoading(false)
     }
@@ -288,7 +315,7 @@ export default function NewGoalPage() {
                       <input
                         type="text"
                         value={channelSearch}
-                        onChange={e => { setChannelSearch(e.target.value); searchChannels(e.target.value) }}
+                        onChange={e => searchChannels(e.target.value)}
                         placeholder="Search for a channel to add…"
                         style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, padding: '9px 12px 9px 32px', color: 'white', fontSize: 12, fontFamily: "'Syne',sans-serif", outline: 'none' }}
                       />
@@ -297,9 +324,13 @@ export default function NewGoalPage() {
                       )}
                     </div>
 
+                    {channelError && channelSearch.trim() && !searching && (
+                      <p style={{ margin: '4px 0 0', fontSize: 11, color: 'rgba(239,68,68,0.7)', padding: '4px 2px' }}>{channelError}</p>
+                    )}
+
                     {searchResults.length > 0 && (
                       <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, overflow: 'hidden' }}>
-                        {searchResults.slice(0, 5).map(ch => (
+                        {searchResults.slice(0, 6).map(ch => (
                           <div key={ch.channel_id} className="search-result-row">
                             <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)', fontFamily: "'Syne',sans-serif", overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                               {ch.channel_title}
@@ -346,6 +377,18 @@ export default function NewGoalPage() {
               <p style={{ textAlign: 'center', fontSize: 12, color: 'rgba(255,255,255,0.25)', margin: '-8px 0 0' }}>
                 Fill in goal name and keywords to continue
               </p>
+            )}
+
+            {generateError && (
+              <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 12, padding: '12px 16px', animation: 'fadeUp 0.2s ease' }}>
+                <p style={{ margin: 0, fontSize: 13, color: '#f87171', fontWeight: 600, marginBottom: 4 }}>⚠ Generation failed</p>
+                <p style={{ margin: 0, fontSize: 12, color: 'rgba(239,68,68,0.7)', lineHeight: 1.5 }}>{generateError}</p>
+                {generateError.toLowerCase().includes('token') || generateError.toLowerCase().includes('sign') ? (
+                  <p style={{ margin: '8px 0 0', fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>
+                    Your YouTube session expired. <a href="/api/auth/signout" style={{ color: '#a855f7', textDecoration: 'none' }}>Sign out</a> and sign back in to refresh it.
+                  </p>
+                ) : null}
+              </div>
             )}
           </form>
         </div>
